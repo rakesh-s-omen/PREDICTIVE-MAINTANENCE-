@@ -6,9 +6,11 @@ import { MachineContext } from '../../context/MachineContext';
 import { Canvas } from '@react-three/fiber';
 import MachineModel from '../DigitalTwin/MachineModel';
 import { OrbitControls } from '@react-three/drei';
+import EfficiencyGraph from './EfficiencyGraph';
+import MachineHealthIndexChart from './MachineHealthIndexChart';
 
 // Configuration
-const BACKEND_URL = 'http://localhost:5000';
+const BACKEND_URL = 'http://192.168.29.147:5000';
 const MAX_DATA_POINTS = 30;
 const THRESHOLD = 389.594406;
 
@@ -19,7 +21,13 @@ const MachineStatus = styled.span`color: ${(props) => (props.status === 'Anomaly
 const ConnectionStatus = styled.div`display: flex; align-items: center;`;
 const ConnectionIndicator = styled.div`width: 10px; height: 10px; background-color: ${(props) => (props.connected ? 'green' : 'red')}; border-radius: 50%; margin-right: 5px;`;
 const DashboardGrid = styled.div`display: grid; grid-template-columns: repeat(12, 1fr); gap: 20px;`;
-const Card = styled.div`background: white; border-radius: 12px; box-shadow: 0px 2px 8px rgba(0,0,0,0.1); grid-column: span ${(props) => props.width || 6}; padding: 20px;`;
+const Card = styled.div`
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0px 2px 8px rgba(0,0,0,0.1);
+  grid-column: span ${(props) => props.width || 6};
+  padding: ${(props) => props.padding || '20px'};
+`;
 const CardHeader = styled.div`margin-bottom: 10px;`;
 const CardTitle = styled.h3`margin: 0;`;
 const SensorGrid = styled.div`display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;`;
@@ -51,6 +59,12 @@ function Dashboard() {
     machineVoltage: 0,
     machineCurrent: 0
   });
+
+  // Add this new state for sensor history
+  const [sensorHistory, setSensorHistory] = useState([]);
+
+  // Add a ref to store latest sensor values for use in anomaly update
+  const latestSensorValuesRef = useRef(null);
 
   const [anomalyData, setAnomalyData] = useState({
     status: 'Normal',
@@ -89,6 +103,11 @@ function Dashboard() {
       }
     ]
   });
+
+  // New state for efficiency data
+  const [efficiencyData, setEfficiencyData] = useState([
+    { timestamp: new Date().toLocaleTimeString(), efficiency: 75 }
+  ]);
 
   const liveDataSourceRef = useRef(null);
   const modelOutputSourceRef = useRef(null);
@@ -139,7 +158,8 @@ function Dashboard() {
     };
   };
 
-  const updateSensorValues = (values) => {
+  // Modified updateSensorValues function
+  const updateSensorValues = (values, currentStatus) => {
     setSensorData({
       temperature: values[0].toFixed(2),
       vibration: values[1].toFixed(2),
@@ -148,6 +168,47 @@ function Dashboard() {
       machineVoltage: values[4].toFixed(2),
       machineCurrent: values[5].toFixed(2)
     });
+
+    // Store latest sensor values in ref for anomaly update use
+    latestSensorValuesRef.current = values;
+    
+    // Add this new code to track sensor history for health index
+    setSensorHistory(prevHistory => {
+      const newHistory = [...prevHistory, {
+        temperature: values[0],
+        vibration: values[1],
+        magneticField: values[2],
+        voltage: values[4],
+        current: values[5],
+        timestamp: new Date().toISOString()
+      }];
+      
+      // Keep only the last 100 readings to prevent memory issues
+      if (newHistory.length > 100) {
+        return newHistory.slice(-100);
+      }
+      return newHistory;
+    });
+
+    // Instead of calculating efficiency from power, directly generate random efficiency within range
+    let efficiencyValue;
+    if (currentStatus === 'Anomaly') {
+      // Random efficiency between 35% and 45%
+      efficiencyValue = 35 + Math.random() * 10;
+    } else {
+      // Random efficiency between 75% and 85%
+      efficiencyValue = 75 + Math.random() * 10;
+    }
+
+    // Update efficiency data state
+    setEfficiencyData(prevData => {
+      const newData = [...prevData, { timestamp: new Date().toLocaleTimeString(), efficiency: efficiencyValue }];
+      if (newData.length > 30) {
+        newData.shift();
+      }
+      return newData;
+    });
+    
     if (machineContext?.updateMachineData) {
       machineContext.updateMachineData({
         temperature: values[0],
@@ -157,6 +218,23 @@ function Dashboard() {
         voltage: values[4],
         current: values[5]
       });
+    }
+  };
+
+  // Update updateAnomalyDetection to pass status to updateSensorValues
+  const updateAnomalyDetection = (result) => {
+    setAnomalyData({
+      status: result.status,
+      reconstructionError: result.reconstruction_error,
+      topSensor: result.top_sensor || '',
+      sensorErrors: result.sensor_errors || {}
+    });
+    if (machineContext?.updateMachineStatus) {
+      machineContext.updateMachineStatus(result.status);
+    }
+    // Call updateSensorValues with latest sensor values and current anomaly status
+    if (latestSensorValuesRef.current) {
+      updateSensorValues(latestSensorValuesRef.current, result.status);
     }
   };
 
@@ -185,18 +263,6 @@ function Dashboard() {
     });
   };
 
-  const updateAnomalyDetection = (result) => {
-    setAnomalyData({
-      status: result.status,
-      reconstructionError: result.reconstruction_error,
-      topSensor: result.top_sensor || '',
-      sensorErrors: result.sensor_errors || {}
-    });
-    if (machineContext?.updateMachineStatus) {
-      machineContext.updateMachineStatus(result.status);
-    }
-  };
-
   const updateLastUpdated = (timestamp) => {
     const date = new Date(timestamp);
     setLastUpdated(date.toLocaleTimeString());
@@ -209,7 +275,7 @@ function Dashboard() {
     maintainAspectRatio: false,
     scales: {
       x: { display: true, title: { display: true, text: 'Time' } },
-      y: { display: true, title: { display: true, text: 'Value' } }
+      y: { display: true, title: { display: true, text: 'Value' }, min: 0, max: 500 }
     },
     animation: { duration: 0 }
   };
@@ -250,19 +316,12 @@ function Dashboard() {
           <ChartContainer><Line data={chartData} options={chartOptions} /></ChartContainer>
         </Card>
 
-        <Card width={6}>
-          <CardHeader><CardTitle>3D CNC Machine Model</CardTitle></CardHeader>
-          <div style={{ height: '500px' }}>
-            <Canvas camera={{ position: [0, 2, 6], fov: 45 }}>
-              <ambientLight intensity={0.5} />
-              <directionalLight position={[0, 5, 5]} intensity={1} />
-              <MachineModel scale={[0.5, 0.5, 0.5]} />
-              <OrbitControls />
-            </Canvas>
-          </div>
-        </Card>
+          <Card width={6}>
+            <CardHeader><CardTitle>Efficiency Graph</CardTitle></CardHeader>
+            <EfficiencyGraph data={efficiencyData} />
+          </Card>
 
-        <Card width={6}>
+        <Card width={12} padding="40px">
           <CardHeader><CardTitle>Anomaly Detection</CardTitle></CardHeader>
           <div>
             <ErrorMeter>
@@ -307,6 +366,25 @@ function Dashboard() {
               </AnomalyDetails>
             )}
           </div>
+        </Card>
+
+        <Card width={12} padding="40px">
+          <CardHeader><CardTitle>3D CNC Machine Model</CardTitle></CardHeader>
+          <div style={{ height: '500px' }}>
+            <Canvas camera={{ position: [0, 2, 6], fov: 45 }}>
+              <ambientLight intensity={0.5} />
+              <directionalLight position={[0, 5, 5]} intensity={1} />
+              <MachineModel scale={[0.5, 0.5, 0.5]} />
+              <OrbitControls />
+            </Canvas>
+          </div>
+        </Card>
+
+        <Card width={12} padding="40px" style={{ marginTop: '20px' }}>
+          <CardHeader><CardTitle>Machine Health Index Trend</CardTitle></CardHeader>
+          <ChartContainer>
+            <MachineHealthIndexChart sensorData={sensorHistory} anomalyStatus={anomalyData.status} />
+          </ChartContainer>
         </Card>
       </DashboardGrid>
     </DashboardContainer>

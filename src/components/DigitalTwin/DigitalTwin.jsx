@@ -5,6 +5,7 @@ import MachineModel from './MachineModel';
 import ControlPanel from './ControlPanel';
 import { MachineContext } from '../../context/MachineContext';
 import styled from 'styled-components';
+import EfficiencyGraph from './EfficiencyGraph';
 
 const DigitalTwinContainer = styled.div`
   background-color: white;
@@ -43,6 +44,17 @@ const DigitalTwin = () => {
     }
   }, []);
 
+  // Assuming machineState has sensorHistory data for efficiency graph
+  // Added sample sensorHistory data for testing visualization
+  const sensorHistory = machineState.sensorHistory || [
+    { timestamp: '2024-06-01 10:00', temperature: 65, vibration: 12 },
+    { timestamp: '2024-06-01 11:00', temperature: 67, vibration: 15 },
+    { timestamp: '2024-06-01 12:00', temperature: 70, vibration: 14 },
+    { timestamp: '2024-06-01 13:00', temperature: 68, vibration: 13 },
+    { timestamp: '2024-06-01 14:00', temperature: 66, vibration: 11 },
+    { timestamp: '2024-06-01 15:00', temperature: 64, vibration: 10 },
+  ];
+
   return (
     <DigitalTwinContainer>
       <h2>Digital Twin Visualization</h2>
@@ -60,6 +72,7 @@ const DigitalTwin = () => {
           <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
         </Canvas>
       </CanvasContainer>
+      <EfficiencyGraph sensorHistory={sensorHistory} />
       <ControlPanel
         components={Object.keys(components)}
         selectedComponent={selectedComponent}

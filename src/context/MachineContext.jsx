@@ -54,7 +54,7 @@ export const MachineProvider = ({ children }) => {
     loadInitialData();
     
     // Set up socket connection for real-time updates
-    const socket = io('http://localhost:5000');
+    const socket = io('http://192.168.29.147:5000');
     
     socket.on('connect', () => {
       console.log('Connected to server');
