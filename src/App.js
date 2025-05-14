@@ -30,6 +30,7 @@ function App() {
           <Title>CNC Machine Monitoring System</Title>
         </Header>
         <Dashboard />
+        
       </AppContainer>
     </MachineProvider>
   );
